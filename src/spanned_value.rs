@@ -13,9 +13,13 @@ use serde::de::IntoDeserializer;
 use serde::ser;
 
 use crate::datetime::{self, DatetimeFromString};
+use crate::spanned::Spanned;
 pub use crate::datetime::{Datetime, DatetimeParseError};
 
 pub use crate::map::Map;
+
+type SpannedValue = Spanned<ValueKind>;
+type SpannedKeyValue = (Spanned<()>, Spanned<ValueKind>);
 
 /// Representation of a TOML value.
 #[derive(PartialEq, Clone, Debug)]
@@ -37,12 +41,12 @@ pub enum ValueKind {
 }
 
 /// Type representing a TOML array, payload of the `ValueKind::Array` variant
-pub type Array = Vec<ValueKind>;
+pub type Array = Vec<SpannedValue>;
 
 /// Type representing a TOML table, payload of the `ValueKind::Table` variant.
 /// By default it is backed by a BTreeMap, enable the `preserve_order` feature
 /// to use a LinkedHashMap instead.
-pub type Table = Map<String, ValueKind>;
+pub type Table = Map<String, SpannedKeyValue>;
 
 impl ValueKind {
     /// Convert a `T` into `toml::ValueKind` which is an enum that can represent
@@ -73,6 +77,7 @@ impl ValueKind {
         de::Deserialize::deserialize(self)
     }
 
+    /*
     /// Index into a TOML array or map. A string index can be used to access a
     /// value in a map, and a usize index can be used to access an element of an
     /// array.
@@ -96,6 +101,7 @@ impl ValueKind {
     pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut ValueKind> {
         index.index_mut(self)
     }
+    */
 
     /// Extracts the integer value if it is an integer.
     pub fn as_integer(&self) -> Option<i64> {
@@ -170,7 +176,7 @@ impl ValueKind {
     }
 
     /// Extracts the array value if it is an array.
-    pub fn as_array(&self) -> Option<&Vec<ValueKind>> {
+    pub fn as_array(&self) -> Option<&Vec<SpannedValue>> {
         match *self {
             ValueKind::Array(ref s) => Some(s),
             _ => None,
@@ -178,7 +184,7 @@ impl ValueKind {
     }
 
     /// Extracts the array value if it is an array.
-    pub fn as_array_mut(&mut self) -> Option<&mut Vec<ValueKind>> {
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<SpannedValue>> {
         match *self {
             ValueKind::Array(ref mut s) => Some(s),
             _ => None,
@@ -230,6 +236,7 @@ impl ValueKind {
     }
 }
 
+/*
 impl<I> ops::Index<I> for ValueKind
 where
     I: Index,
@@ -249,6 +256,7 @@ where
         self.get_mut(index).expect("index not found")
     }
 }
+*/
 
 impl<'a> From<&'a str> for ValueKind {
     #[inline]
@@ -257,13 +265,13 @@ impl<'a> From<&'a str> for ValueKind {
     }
 }
 
-impl<V: Into<ValueKind>> From<Vec<V>> for ValueKind {
+impl<V: Into<SpannedValue>> From<Vec<V>> for ValueKind {
     fn from(val: Vec<V>) -> ValueKind {
         ValueKind::Array(val.into_iter().map(|v| v.into()).collect())
     }
 }
 
-impl<S: Into<String>, V: Into<ValueKind>> From<BTreeMap<S, V>> for ValueKind {
+impl<S: Into<String>, V: Into<SpannedKeyValue>> From<BTreeMap<S, V>> for ValueKind {
     fn from(val: BTreeMap<S, V>) -> ValueKind {
         let table = val.into_iter().map(|(s, v)| (s.into(), v.into())).collect();
 
@@ -271,7 +279,7 @@ impl<S: Into<String>, V: Into<ValueKind>> From<BTreeMap<S, V>> for ValueKind {
     }
 }
 
-impl<S: Into<String> + Hash + Eq, V: Into<ValueKind>> From<HashMap<S, V>> for ValueKind {
+impl<S: Into<String> + Hash + Eq, V: Into<SpannedKeyValue>> From<HashMap<S, V>> for ValueKind {
     fn from(val: HashMap<S, V>) -> ValueKind {
         let table = val.into_iter().map(|(s, v)| (s.into(), v.into())).collect();
 
@@ -310,10 +318,11 @@ impl_into_value!(Table: Table);
 /// This trait is sealed and not intended for implementation outside of the
 /// `toml` crate.
 pub trait Index: Sealed {
+    type Target;
     #[doc(hidden)]
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a ValueKind>;
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target>;
     #[doc(hidden)]
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut ValueKind>;
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target>;
 }
 
 /// An implementation detail that should not be implemented, this will change in
@@ -326,14 +335,15 @@ impl Sealed for String {}
 impl<'a, T: Sealed + ?Sized> Sealed for &'a T {}
 
 impl Index for usize {
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a ValueKind> {
+    type Target = SpannedValue;
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target> {
         match *val {
             ValueKind::Array(ref a) => a.get(*self),
             _ => None,
         }
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut ValueKind> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target> {
         match *val {
             ValueKind::Array(ref mut a) => a.get_mut(*self),
             _ => None,
@@ -342,14 +352,15 @@ impl Index for usize {
 }
 
 impl Index for str {
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a ValueKind> {
+    type Target = SpannedKeyValue;
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target> {
         match *val {
             ValueKind::Table(ref a) => a.get(self),
             _ => None,
         }
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut ValueKind> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target> {
         match *val {
             ValueKind::Table(ref mut a) => a.get_mut(self),
             _ => None,
@@ -358,15 +369,17 @@ impl Index for str {
 }
 
 impl Index for String {
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a ValueKind> {
+    type Target = SpannedKeyValue;
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target> {
         self[..].index(val)
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut ValueKind> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target> {
         self[..].index_mut(val)
     }
 }
 
+/*
 impl<'s, T: ?Sized> Index for &'s T
 where
     T: Index,
@@ -379,6 +392,7 @@ where
         (**self).index_mut(val)
     }
 }
+*/
 
 impl fmt::Display for ValueKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -413,26 +427,26 @@ impl ser::Serialize for ValueKind {
                 let mut map = serializer.serialize_map(Some(t.len()))?;
                 // Be sure to visit non-tables first (and also non
                 // array-of-tables) as all keys must be emitted first.
-                for (k, v) in t {
-                    if !v.is_table() && !v.is_array()
-                        || (v
+                for (k, (ks, v)) in t {
+                    if !v.get_ref().is_table() && !v.get_ref().is_array()
+                        || (v.get_ref()
                             .as_array()
-                            .map(|a| !a.iter().any(|v| v.is_table()))
+                            .map(|a| !a.iter().any(|v| v.get_ref().is_table()))
                             .unwrap_or(false))
                     {
                         map.serialize_entry(k, v)?;
                     }
                 }
-                for (k, v) in t {
-                    if v.as_array()
-                        .map(|a| a.iter().any(|v| v.is_table()))
+                for (k, (ks, v)) in t {
+                    if v.get_ref().as_array()
+                        .map(|a| a.iter().any(|v| v.get_ref().is_table()))
                         .unwrap_or(false)
                     {
                         map.serialize_entry(k, v)?;
                     }
                 }
-                for (k, v) in t {
-                    if v.is_table() {
+                for (k, (ks, v)) in t {
+                    if v.get_ref().is_table() {
                         map.serialize_entry(k, v)?;
                     }
                 }
@@ -626,11 +640,11 @@ impl<'de> de::Deserializer<'de> for ValueKind {
 }
 
 struct SeqDeserializer {
-    iter: vec::IntoIter<ValueKind>,
+    iter: vec::IntoIter<SpannedValue>,
 }
 
 impl SeqDeserializer {
-    fn new(vec: Vec<ValueKind>) -> Self {
+    fn new(vec: Vec<SpannedValue>) -> Self {
         SeqDeserializer {
             iter: vec.into_iter(),
         }
@@ -645,7 +659,7 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer {
         T: de::DeserializeSeed<'de>,
     {
         match self.iter.next() {
-            Some(value) => seed.deserialize(value).map(Some),
+            Some(value) => seed.deserialize(value.into_inner()).map(Some),
             None => Ok(None),
         }
     }
@@ -659,12 +673,12 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer {
 }
 
 struct MapDeserializer {
-    iter: <Map<String, ValueKind> as IntoIterator>::IntoIter,
-    value: Option<(String, ValueKind)>,
+    iter: <Table as IntoIterator>::IntoIter,
+    value: Option<(String, SpannedKeyValue)>,
 }
 
 impl MapDeserializer {
-    fn new(map: Map<String, ValueKind>) -> Self {
+    fn new(map: Table) -> Self {
         MapDeserializer {
             iter: map.into_iter(),
             value: None,
@@ -791,8 +805,7 @@ impl ser::Serializer for Serializer {
     }
 
     fn serialize_bytes(self, value: &[u8]) -> Result<ValueKind, crate::ser::Error> {
-        let vec = value.iter().map(|&b| ValueKind::Integer(b.into())).collect();
-        Ok(ValueKind::Array(vec))
+        Err(crate::ser::Error::UnsupportedType)
     }
 
     fn serialize_unit(self) -> Result<ValueKind, crate::ser::Error> {
@@ -902,11 +915,11 @@ impl ser::Serializer for Serializer {
 }
 
 struct SerializeVec {
-    vec: Vec<ValueKind>,
+    vec: Vec<SpannedValue>,
 }
 
 struct SerializeMap {
-    map: Map<String, ValueKind>,
+    map: Table,
     next_key: Option<String>,
 }
 
