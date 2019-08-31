@@ -11,6 +11,7 @@ use std::fmt;
 use std::mem::discriminant;
 use std::str;
 use std::vec;
+use std::marker::PhantomData;
 
 use serde::de;
 use serde::de::value::BorrowedStrDeserializer;
@@ -231,7 +232,7 @@ impl<'de, 'b> de::Deserializer<'de> for &'b mut Deserializer<'de> {
             // from serde (like "missing field") or from a custom deserializer,
             // do not have offsets on them. Here, we do a best guess at their
             // location, by attributing them to the "current table" (the last
-            // item in `tables`).
+            // item in `tables`).<
             err.fix_offset(|| tables.last().map(|table| table.at));
             err.fix_linecol(|at| self.to_linecol(at));
             err
@@ -285,9 +286,34 @@ impl<'de, 'b> de::Deserializer<'de> for &'b mut Deserializer<'de> {
         }
     }
 
+    fn deserialize_struct<V>(
+        self,
+        name: &'static str,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error>
+    where
+        V: de::Visitor<'de>,
+    {
+        if name == spanned::NAME && fields == [spanned::START, spanned::END, spanned::VALUE] {
+            let start = 0;
+            let end = 0;
+
+            let res = visitor.visit_map(SpannedDeserializer {
+                phantom_data: PhantomData,
+                start: Some(start),
+                value: Some(self),
+                end: Some(end),
+            });
+            return res;
+        }
+
+        self.deserialize_any(visitor)
+    }
+
     serde::forward_to_deserialize_any! {
         bool u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 char str string seq
-        bytes byte_buf map struct unit newtype_struct
+        bytes byte_buf map unit newtype_struct
         ignored_any unit_struct tuple_struct tuple option identifier
     }
 }
@@ -664,6 +690,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
             let end = self.value.end;
 
             return visitor.visit_map(SpannedDeserializer {
+                phantom_data: PhantomData,
                 start: Some(start),
                 value: Some(self.value),
                 end: Some(end),
@@ -741,6 +768,14 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
     }
 }
 
+impl<'de, 'b> de::IntoDeserializer<'de, Error> for &'b mut Deserializer<'de> {
+    type Deserializer = Self;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        self
+    }
+}
+
 impl<'de> de::IntoDeserializer<'de, Error> for Value<'de> {
     type Deserializer = ValueDeserializer<'de>;
 
@@ -749,13 +784,17 @@ impl<'de> de::IntoDeserializer<'de, Error> for Value<'de> {
     }
 }
 
-struct SpannedDeserializer<'a> {
+struct SpannedDeserializer<'de, T: de::IntoDeserializer<'de, Error>> {
+    phantom_data: PhantomData<&'de T>,
     start: Option<usize>,
     end: Option<usize>,
-    value: Option<Value<'a>>,
+    value: Option<T>,
 }
 
-impl<'de> de::MapAccess<'de> for SpannedDeserializer<'de> {
+impl<'de, T> de::MapAccess<'de> for SpannedDeserializer<'de, T>
+where
+    T: de::IntoDeserializer<'de, Error>,
+{
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Error>

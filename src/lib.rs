@@ -153,6 +153,8 @@ pub mod value;
 pub mod spanned_value;
 #[doc(no_inline)]
 pub use crate::value::Value;
+#[doc(no_inline)]
+pub use crate::spanned_value::SpannedValue;
 mod datetime;
 
 pub mod ser;
