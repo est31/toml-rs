@@ -29,6 +29,8 @@ fn test_spanned_field() {
     {
         let foo: SpannedValue = toml::from_str(s).unwrap();
 
+        let foo = &foo.get_ref()["foo"];
+
         assert_eq!(6, foo.start());
         assert_eq!(s.len(), foo.end());
         assert_eq!(expected, &s[foo.start()..foo.end()]);

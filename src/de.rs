@@ -785,7 +785,7 @@ impl<'de> de::IntoDeserializer<'de, Error> for Value<'de> {
 }
 
 struct SpannedDeserializer<'de, T: de::IntoDeserializer<'de, Error>> {
-    phantom_data: PhantomData<&'de T>,
+    phantom_data: PhantomData<&'de ()>,
     start: Option<usize>,
     end: Option<usize>,
     value: Option<T>,

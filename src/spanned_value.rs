@@ -5,6 +5,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::mem::discriminant;
 use std::str::FromStr;
+use std::ops;
 
 use serde::de;
 use serde::ser;
@@ -62,7 +63,6 @@ impl ValueKind {
         de::Deserialize::deserialize(self)
     }*/
 
-    /*
     /// Index into a TOML array or map. A string index can be used to access a
     /// value in a map, and a usize index can be used to access an element of an
     /// array.
@@ -71,7 +71,7 @@ impl ValueKind {
     /// index, for example if the index is a string and `self` is an array or a
     /// number. Also returns `None` if the given key does not exist in the map
     /// or the given index is not within the bounds of the array.
-    pub fn get<I: Index>(&self, index: I) -> Option<&ValueKind> {
+    pub fn get<I: Index>(&self, index: I) -> Option<&SpannedValue> {
         index.index(self)
     }
 
@@ -83,10 +83,9 @@ impl ValueKind {
     /// index, for example if the index is a string and `self` is an array or a
     /// number. Also returns `None` if the given key does not exist in the map
     /// or the given index is not within the bounds of the array.
-    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut ValueKind> {
+    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut SpannedValue> {
         index.index_mut(self)
     }
-    */
 
     /// Extracts the integer value if it is an integer.
     pub fn as_integer(&self) -> Option<i64> {
@@ -221,14 +220,13 @@ impl ValueKind {
     }
 }
 
-/*
 impl<I> ops::Index<I> for ValueKind
 where
     I: Index,
 {
-    type Output = ValueKind;
+    type Output = SpannedValue;
 
-    fn index(&self, index: I) -> &ValueKind {
+    fn index(&self, index: I) -> &SpannedValue {
         self.get(index).expect("index not found")
     }
 }
@@ -237,11 +235,10 @@ impl<I> ops::IndexMut<I> for ValueKind
 where
     I: Index,
 {
-    fn index_mut(&mut self, index: I) -> &mut ValueKind {
+    fn index_mut(&mut self, index: I) -> &mut SpannedValue {
         self.get_mut(index).expect("index not found")
     }
 }
-*/
 
 impl<'a> From<&'a str> for ValueKind {
     #[inline]
@@ -304,11 +301,9 @@ impl_into_value!(Table: Table);
 /// `toml` crate.
 pub trait Index: Sealed {
     #[doc(hidden)]
-    type Target;
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a SpannedValue>;
     #[doc(hidden)]
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target>;
-    #[doc(hidden)]
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target>;
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut SpannedValue>;
 }
 
 /// An implementation detail that should not be implemented, this will change in
@@ -321,15 +316,14 @@ impl Sealed for String {}
 impl<'a, T: Sealed + ?Sized> Sealed for &'a T {}
 
 impl Index for usize {
-    type Target = SpannedValue;
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target> {
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a SpannedValue> {
         match *val {
             ValueKind::Array(ref a) => a.get(*self),
             _ => None,
         }
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut SpannedValue> {
         match *val {
             ValueKind::Array(ref mut a) => a.get_mut(*self),
             _ => None,
@@ -338,15 +332,14 @@ impl Index for usize {
 }
 
 impl Index for str {
-    type Target = SpannedValue;
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target> {
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a SpannedValue> {
         match *val {
             ValueKind::Table(ref a) => a.get(self),
             _ => None,
         }
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut SpannedValue> {
         match *val {
             ValueKind::Table(ref mut a) => a.get_mut(self),
             _ => None,
@@ -355,30 +348,27 @@ impl Index for str {
 }
 
 impl Index for String {
-    type Target = SpannedValue;
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a Self::Target> {
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a SpannedValue> {
         self[..].index(val)
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut Self::Target> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut SpannedValue> {
         self[..].index_mut(val)
     }
 }
 
-/*
 impl<'s, T: ?Sized> Index for &'s T
 where
     T: Index,
 {
-    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a ValueKind> {
+    fn index<'a>(&self, val: &'a ValueKind) -> Option<&'a SpannedValue> {
         (**self).index(val)
     }
 
-    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut ValueKind> {
+    fn index_mut<'a>(&self, val: &'a mut ValueKind) -> Option<&'a mut SpannedValue> {
         (**self).index_mut(val)
     }
 }
-*/
 
 impl fmt::Display for ValueKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
